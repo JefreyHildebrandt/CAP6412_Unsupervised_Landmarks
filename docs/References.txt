@@ -1,0 +1,12 @@
+Add the path to this codebase to PYTHONPATH
+
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+
+use pillow
+
+
+References:
+http://cognitivemedium.com/assets/rmnist/Simard.pdf
+https://github.com/mdbloice/Augmentor
+https://medium.com/lets-enhance-stories/content-and-style-loss-using-vgg-network-e810a7afe5fc
+https://stackoverflow.com/questions/47675094/implement-perceptual-loss-with-pretrained-vgg-using-keras
