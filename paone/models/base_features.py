@@ -95,27 +95,26 @@ def get_conv_features(features, labels, mode, params, config):
         # gauss_xy.append(gauss_map)
     # LOOK AT SIMPLE_RENDERER AND NOTICE THAT ONLY THE SMALLEST SIZE GAUSSIAN MAP IS NEEDED
     combined_renderer_input = tf.concat([last_conv, gauss_map], axis=-1)
-    
 
-    print()
-
-    rebuild_image_conv_net(combined_renderer_input)
+    output_images = rebuild_image_conv_net(combined_renderer_input, cur_feature_channels)
     # prev_layer = start_conv
     # for _ in range(1, num_blocks):
     #     cur_feature_channels *= 2
     #     prev_layer = get_next_conv_block(prev_layer, cur_feature_channels)
     # with 3 layers with stride of 2, with input 128x128x3 the output will be 16x16xN
+    loss = perceptual_loss(output_images, labels)
+
     lr = tf.train.exponential_decay(0.001,
                               tf.train.get_global_step(),
                               100000,
                               0.95,
                               staircase=True)
-    loss = []
-    train_op = tf.train.AdamOptimizer(learning_rate=lr).compute_gradients(loss, colocate_gradients_with_ops=True)
+
+    train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss)
 
 
 
-    return tf.estimator.EstimatorSpec(mode=mode, predictions=None, loss=loss, train_op=train_op)
+    return tf.estimator.EstimatorSpec(mode=mode, predictions=output_images, loss=loss, train_op=train_op)
 
 def get_coordinates_from_heatmaps(heatmaps, x_y, x_y_size):
     g_c_prob = tf.reduce_mean(heatmaps, axis=x_y)  # B,W,NMAP
@@ -152,5 +151,38 @@ def get_next_conv_block(inputs_layer, filter_size, kernel_size=[3, 3], strides=2
     conv2 = tf.layers.conv2d(inputs=conv1, filters=filter_size, kernel_size=[3, 3], strides=1)
     return conv2
 
-def rebuild_image_conv_net(inputs_layer, output_shape=[128, 128, 3]):
-    pass
+def rebuild_image_conv_net(inputs_layer, starting_feature_channels, output_shape=[128, 128, 3]):
+    num_channels = starting_feature_channels
+
+    count = 0
+    # size = inputs_layer.shape.as_list()[1:3]
+    while True:
+        inputs_layer = tf.layers.conv2d(inputs=inputs_layer, filters=num_channels, kernel_size=[3, 3], strides=1)
+
+        if num_channels <= output_shape[2]:
+            inputs_layer = tf.layers.conv2d(inputs=inputs_layer, filters=num_channels, kernel_size=[3, 3], strides=1)
+            return inputs_layer
+ 
+        inputs_layer = tf.layers.conv2d(inputs=inputs_layer, filters=num_channels, kernel_size=[3, 3], strides=1)
+        size = inputs_layer.shape.as_list()[1:3]
+        temp_layer = tf.image.resize_images(inputs_layer, [2 * s for s in size])
+        if temp_layer.get_shape().as_list()[1] > output_shape[0] or num_channels < output_shape[2]:
+            inputs_layer = tf.image.resize_images(inputs_layer, [s + 4 for s in output_shape[0: 2]])
+            num_channels = output_shape[2]
+            count += 1
+            continue
+        else:
+            inputs_layer = temp_layer
+
+        count += 1
+        num_channels = num_channels / 2
+
+def perceptual_loss(output_images, ground_truth_images):
+    return tf.losses.mean_squared_error(
+        ground_truth_images,
+        output_images,
+        weights=1.0,
+        scope=None,
+        loss_collection=tf.GraphKeys.LOSSES,
+        reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
+        
